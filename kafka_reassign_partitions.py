@@ -3,17 +3,26 @@ import json
 import ast
 
 
-# Get topics list and brokers dict from file
 def get_topics_brokers_from_file():
+    """Get topics list and brokers dict from file
+
+    Return:
+    topics_list - list with topics
+    brokers_dict - dict with brokers distributed by data centers {datacenter: [brokers]}
+                                                             {1: [0, 1, 2, 3],
+                                                              2: [4, 5],
+                                                              3: [6, 7, 8],}
+
+    """
     # Datacenter's name: list of the brokers
     bf = open('brokers_datacenters_list')
-    hosts_string = bf.readlines(1)[0]
+    brokers_string = bf.readlines(1)[0]
     bf.close()
 
     # Magic to transform string representation of a Dictionary to a dictionary
-    hosts_dict = ast.literal_eval(hosts_string)
-    if not isinstance(hosts_dict, dict):
-        raise Exception("В файле какая-то хрень!")
+    brokers_dict = ast.literal_eval(brokers_string)
+    if not isinstance(brokers_dict, dict):
+        raise Exception('The line in the file "brokers_datacenters_list" does not match the dictionary format')
 
     # List of the topics
     topics_list = []
@@ -22,11 +31,23 @@ def get_topics_brokers_from_file():
         topics_list.append(topics[:-1])
     tf.close()
 
-    return topics_list, hosts_dict
+    return topics_list, brokers_dict
 
 
-# Create json with value for entered topics
-def create_dict_for_assign(topics_list, hosts_dict):
+def create_dict_for_assign(topics_list, brokers_dict):
+    """Get topics list and brokers dict from file
+
+    Arguments:
+    topics_list - list with topics
+    brokers_dict - dict with brokers distributed by data centers {datacenter: [brokers]}
+                                                             {1: [0, 1, 2, 3],
+                                                              2: [4, 5],
+                                                              3: [6, 7, 8],}
+
+    Return:
+    reassign_info - dict for json for reassign command
+
+    """
     inc = 0
 
     reassign_info = {
@@ -48,26 +69,50 @@ def create_dict_for_assign(topics_list, hosts_dict):
                 # Write the name of the topic without \n
                 'topic': topic,
                 # Determine brokers for storage partitions for the topic
-                'replicas': create_extended_broker_list(hosts_dict, inc),
+                'replicas': create_extended_broker_list(brokers_dict, inc),
             })
 
     return reassign_info
 
 
-# Get the list of the partitions for topic
 def get_partitions_list(topic):
+    """Get the list of the partitions for topic
+
+    Arguments:
+    topic - name of the topic
+    
+    Return:
+    partitions_list - list of the topic's partitions
+
+    """
     producer = KafkaProducer(bootstrap_servers='localhost:9092')
     partitions_list = producer.partitions_for(topic)
     return partitions_list
 
 
-# Generate new list of the brokers (for storage partitions for each topics on the new datacenters)
-def create_extended_broker_list(hosts_dict, inc):
+def create_extended_broker_list(brokers_dict, inc):
+    """Generate new list of the brokers 
+                (for storage partitions for each topics on the new datacenters)
+
+    Arguments:
+    brokers_dict - dict with brokers distributed by data centers 
+                                                {datacenter: [brokers]}
+                                                Example:
+                                                {1: [0, 1, 2, 3],
+                                                 2: [4, 5],
+                                                 3: [6, 7, 8],}
+    inc - counter of the partitions                                                              
+
+    Return:
+    updated_broker_list - list with new brokers on which 
+                                     the partitions will be kept after reassign
+
+    """
     updated_broker_list = []
 
-    for datacenter_num in hosts_dict:
+    for datacenter_num in brokers_dict:
         # List of the brokers in the current datacenter
-        broker_list = hosts_dict[datacenter_num]
+        broker_list = brokers_dict[datacenter_num]
         # Choose broker from list
         broker_num = inc % len(broker_list)
         current_broker = broker_list[broker_num]
@@ -77,8 +122,8 @@ def create_extended_broker_list(hosts_dict, inc):
 
 
 def main():
-    topics_list, hosts_dict = get_topics_brokers_from_file()
-    dict_for_json = create_dict_for_assign(topics_list, hosts_dict)
+    topics_list, brokers_dict = get_topics_brokers_from_file()
+    dict_for_json = create_dict_for_assign(topics_list, brokers_dict)
     result_json = json.dumps(dict_for_json)
     # Magic happens here to make it pretty-printed
     pretty_json = json.dumps(json.loads(result_json), indent=4, sort_keys=True)
